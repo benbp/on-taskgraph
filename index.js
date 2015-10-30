@@ -20,7 +20,8 @@ var di = require('di'),
             require('./lib/registry'),
             require('./lib/service-graph'),
             require('./lib/stores/memory'),
-            require('./lib/stores/waterline')
+            require('./lib/stores/waterline'),
+            require('./lib/stores/mongo')
         ])
     ),
     taskGraphRunner = injector.get('TaskGraph.Runner'),
