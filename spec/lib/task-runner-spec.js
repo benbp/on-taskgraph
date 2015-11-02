@@ -49,16 +49,19 @@ describe("Task-runner", function() {
         expect(runner.pipeline).to.not.equal(null);
     });
 
-    it("should instantiate a checked out task", function() {
+    it("should instantiate a checked out task", function(done) {
+        this.sandbox.stub(waterline.graphobjects, 'checkoutTaskForRunner').resolves(taskDef);
         runner.inputStream.onNext(taskAndGraphId);
 
+        setImmediate(function() {
+            expect(Task.create).to.have.been.calledOnce;
+            done();
+        });
     });
 
     it("should filter tasks that have already been checkout out", function(done) {
         this.sandbox.stub(waterline.graphobjects, 'checkoutTaskForRunner');
         this.sandbox.stub(runner, 'handleTask');
-      //  console.log('woof');
-        console.log(runner.subscriptions);
         waterline.graphobjects.checkoutTaskForRunner.onCall(0).resolves(taskDef);
         waterline.graphobjects.checkoutTaskForRunner.onCall(1).resolves(undefined);
 
@@ -76,10 +79,6 @@ describe("Task-runner", function() {
     it("should run an instantiated task", function() {
         runner.inputStream.onNext(taskAndGraphId);
 
-    });
-
-    it("should publish a taskfinished event to its output stream", function() {
-        runner.inputStream.onNext(taskAndGraphId);
     });
 
     it("should dispose all stream resources on stop", function() {
