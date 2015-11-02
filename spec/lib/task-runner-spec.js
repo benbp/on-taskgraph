@@ -7,7 +7,7 @@ describe("Task-runner", function() {
     var runner,
     Task = {},
     TaskRunner,
-    waterline = { graphobjects: {} },
+    store = {},
     taskAndGraphId,
     stubbedTask = {run:function() {}},
     taskDef = {
@@ -22,11 +22,10 @@ describe("Task-runner", function() {
         helper.setupInjector([
                 require('../../lib/task-runner.js'),
                 helper.di.simpleWrapper(Task, 'Task.Task'),
-                helper.di.simpleWrapper(waterline, 'Services.Waterline')
+                helper.di.simpleWrapper(store, 'TaskGraph.Store')
         ]);
         TaskRunner = helper.injector.get('TaskGraph.TaskRunner');
         this.sandbox = sinon.sandbox.create();
-        waterline.graphobjects.checkoutTaskForRunner = function() {};
     });
 
     beforeEach(function() {
@@ -37,7 +36,7 @@ describe("Task-runner", function() {
         };
         stubbedTask.run = this.sandbox.stub();
         Task.create = this.sandbox.stub().returns(stubbedTask);
-
+        store.checkoutTask = this.sandbox.stub();
         return runner.start();
     });
 
@@ -49,35 +48,33 @@ describe("Task-runner", function() {
         expect(runner.pipeline).to.not.equal(null);
     });
 
-    it("should instantiate a checked out task", function(done) {
-        this.sandbox.stub(waterline.graphobjects, 'checkoutTaskForRunner').resolves(taskDef);
+    it("should instantiate and run checked out task", function(done) {
+        store.checkoutTask.resolves(taskDef);
         runner.inputStream.onNext(taskAndGraphId);
 
         setImmediate(function() {
             expect(Task.create).to.have.been.calledOnce;
+            expect(stubbedTask.run).to.have.been.calledOnce;
             done();
         });
     });
 
     it("should filter tasks that have already been checkout out", function(done) {
-        this.sandbox.stub(waterline.graphobjects, 'checkoutTaskForRunner');
-        this.sandbox.stub(runner, 'handleTask');
-        waterline.graphobjects.checkoutTaskForRunner.onCall(0).resolves(taskDef);
-        waterline.graphobjects.checkoutTaskForRunner.onCall(1).resolves(undefined);
+        store.checkoutTask.onCall(0).resolves(taskDef);
+        store.checkoutTask.onCall(1).resolves(undefined);
 
         runner.inputStream.onNext(taskAndGraphId);
         runner.inputStream.onNext(taskAndGraphId);
 
         setImmediate(function() {
-            expect(waterline.graphobjects.checkoutTaskForRunner).to.be.calledTwice;
+            expect(store.checkoutTask).to.be.calledTwice;
             expect(stubbedTask.run).to.be.calledOnce;
             done();
         });
 
     });
 
-    it("should run an instantiated task", function() {
-        runner.inputStream.onNext(taskAndGraphId);
+    it("should listen for task/graph IDs to run", function() {
 
     });
 
