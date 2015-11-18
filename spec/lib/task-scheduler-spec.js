@@ -4,12 +4,14 @@
 
 describe('Task Scheduler', function() {
     var TaskScheduler;
+    var TaskGraph;
     var taskScheduler;
     var store;
     var Constants;
+    var Promise;
     var Rx;
 
-    var asyncAssertWrappper = function(done, cb) {
+    var asyncAssertWrapper = function(done, cb) {
         return function(data) {
             try {
                 cb(data);
@@ -18,6 +20,10 @@ describe('Task Scheduler', function() {
                 done(e);
             }
         };
+    };
+
+    var setImmediateAssertWrapper = function(done, cb) {
+        setImmediate(asyncAssertWrapper(done, cb));
     };
 
     before(function() {
@@ -32,9 +38,16 @@ describe('Task Scheduler', function() {
         ]);
         Constants = helper.injector.get('Constants');
         TaskScheduler = helper.injector.get('TaskGraph.TaskScheduler');
+        TaskGraph = helper.injector.get('TaskGraph.TaskGraph');
         store = helper.injector.get('TaskGraph.Store');
         Rx = helper.injector.get('Rx');
+        Promise = helper.injector.get('Promise');
         this.sandbox = sinon.sandbox.create();
+    });
+
+    beforeEach(function() {
+        this.sandbox.stub(taskScheduler, 'handleStreamError');
+        this.sandbox.stub(taskScheduler, 'handleStreamSuccess');
     });
 
     afterEach(function() {
@@ -42,10 +55,18 @@ describe('Task Scheduler', function() {
     });
 
     describe('Scheduling pipeline handler', function() {
-        var taskScheduler;
-
         before(function() {
             taskScheduler = TaskScheduler.create();
+        });
+
+        it('stream success handler should return an observable', function() {
+            taskScheduler.handleStreamSuccess.restore();
+            expect(taskScheduler.handleStreamSuccess()).to.be.an.instanceof(Rx.Observable);
+        });
+
+        it('stream error handler should return an empty observable', function() {
+            taskScheduler.handleStreamError.restore();
+            expect(taskScheduler.handleStreamError('test', {})).to.be.an.instanceof(Rx.Observable);
         });
 
         describe('createTaskHandlerStream', function() {
@@ -59,7 +80,6 @@ describe('Task Scheduler', function() {
 
             beforeEach(function() {
                 this.sandbox.stub(taskScheduler, 'checkTaskStateHandled');
-                this.sandbox.stub(taskScheduler, 'handleStreamError');
             });
 
             afterEach(function() {
@@ -72,7 +92,7 @@ describe('Task Scheduler', function() {
                 taskHandlerStream = taskScheduler.createTaskHandlerStream(evaluateTaskStream);
 
                 subscription = taskHandlerStream.subscribe(
-                    asyncAssertWrappper(done, function(data) {
+                    asyncAssertWrapper(done, function(data) {
                         expect(data).to.equal(out);
                     })
                 );
@@ -89,14 +109,12 @@ describe('Task Scheduler', function() {
                 subscription = taskHandlerStream.subscribe(function() {});
                 evaluateTaskStream.onNext();
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(taskScheduler.handleStreamError).to.have.been.calledWith(
-                            'Error evaluating task state',
-                            testError
-                        );
-                    })
-                );
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error evaluating task state',
+                        testError
+                    );
+                });
             });
 
             it('should not multicast stream errors', function(done) {
@@ -108,12 +126,10 @@ describe('Task Scheduler', function() {
                 subscription = taskHandlerStream.subscribe(subscriberStub);
                 evaluateTaskStream.onNext();
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
-                        expect(subscriberStub).to.not.have.been.called;
-                    })
-                );
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
+                    expect(subscriberStub).to.not.have.been.called;
+                });
             });
         });
 
@@ -128,7 +144,6 @@ describe('Task Scheduler', function() {
 
             beforeEach(function() {
                 this.sandbox.stub(store, 'findReadyTasksForGraph');
-                this.sandbox.stub(taskScheduler, 'handleStreamError');
             });
 
             afterEach(function() {
@@ -141,7 +156,7 @@ describe('Task Scheduler', function() {
                 readyTaskStream = taskScheduler.createReadyTaskStream(evaluateGraphStream);
 
                 subscription = readyTaskStream.subscribe(
-                    asyncAssertWrappper(done, function(data) {
+                    asyncAssertWrapper(done, function(data) {
                         expect(data).to.equal(out);
                     })
                 );
@@ -158,14 +173,12 @@ describe('Task Scheduler', function() {
                 subscription = readyTaskStream.subscribe(function() {});
                 evaluateGraphStream.onNext();
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(taskScheduler.handleStreamError).to.have.been.calledWith(
-                            'Error finding ready tasks',
-                            testError
-                        );
-                    })
-                );
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error finding ready tasks',
+                        testError
+                    );
+                });
             });
 
             it('should not multicast stream errors', function(done) {
@@ -177,12 +190,10 @@ describe('Task Scheduler', function() {
                 subscription = readyTaskStream.subscribe(subscriberStub);
                 evaluateGraphStream.onNext();
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
-                        expect(subscriberStub).to.not.have.been.called;
-                    })
-                );
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
+                    expect(subscriberStub).to.not.have.been.called;
+                });
             });
         });
 
@@ -197,28 +208,12 @@ describe('Task Scheduler', function() {
             beforeEach(function() {
                 this.sandbox.stub(store, 'checkoutTaskForScheduler');
                 this.sandbox.stub(taskScheduler, 'scheduleTaskHandler');
-                this.sandbox.stub(taskScheduler, 'handleStreamError')
-                    .returns(Rx.Observable.empty());
+                taskScheduler.handleStreamError.returns(Rx.Observable.empty());
                 subscription = taskScheduler.createTasksToScheduleSubscription(readyTaskStream);
             });
 
             afterEach(function() {
                 subscription.dispose();
-            });
-
-            it('should find ready tasks for graph', function(done) {
-                var out = {};
-                store.checkoutTaskForScheduler.resolves(out);
-
-                readyTaskStream.onNext({ tasks: [ {}, {}, {} ] });
-                readyTaskStream.onNext({ tasks: [ {}, {}, {} ] });
-                readyTaskStream.onNext({ tasks: [ {}, {}, {} ] });
-
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(store.checkoutTaskForScheduler.callCount).to.equal(9);
-                    })
-                );
             });
 
             it('should filter if no tasks are found', function(done) {
@@ -228,11 +223,9 @@ describe('Task Scheduler', function() {
                 readyTaskStream.onNext({ tasks: [] });
                 readyTaskStream.onNext({ tasks: [] });
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(store.checkoutTaskForScheduler).to.not.have.been.called;
-                    })
-                );
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.checkoutTaskForScheduler).to.not.have.been.called;
+                });
             });
 
             it('should filter if a task was not checked out', function(done) {
@@ -242,12 +235,37 @@ describe('Task Scheduler', function() {
                 readyTaskStream.onNext({ tasks: [ {}, {}, {} ] });
                 readyTaskStream.onNext({ tasks: [ {}, {}, {} ] });
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(store.checkoutTaskForScheduler.callCount).to.equal(9);
-                        expect(taskScheduler.scheduleTaskHandler).to.not.have.been.called;
-                    })
-                );
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.checkoutTaskForScheduler.callCount).to.equal(9);
+                    expect(taskScheduler.scheduleTaskHandler).to.not.have.been.called;
+                });
+            });
+
+            it('should schedule ready tasks for a graph', function(done) {
+                var out = { instanceId: 'testid' };
+                taskScheduler.scheduleTaskHandler.resolves();
+                store.checkoutTaskForScheduler.returns(Rx.Observable.repeat(out, 3));
+
+                readyTaskStream.onNext({ tasks: [ {} ] });
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.checkoutTaskForScheduler).to.have.been.called;
+                    expect(taskScheduler.scheduleTaskHandler.callCount).to.equal(3);
+                    expect(taskScheduler.scheduleTaskHandler).to.have.been.calledWith(out);
+                });
+            });
+
+            it('should handle stream successes', function(done) {
+                var out = { instanceId: 'testid' };
+                store.checkoutTaskForScheduler.resolves(out);
+                taskScheduler.scheduleTaskHandler.resolves(out);
+                readyTaskStream.onNext({ tasks: [ {} ] });
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamSuccess).to.have.been.calledOnce;
+                    expect(taskScheduler.handleStreamSuccess)
+                        .to.have.been.calledWith('Task scheduled', out);
+                });
             });
 
             it('should handle stream errors', function(done) {
@@ -256,100 +274,295 @@ describe('Task Scheduler', function() {
 
                 readyTaskStream.onNext({ tasks: [ {} ] });
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(taskScheduler.handleStreamError).to.have.been.calledWith(
-                            'Error scheduling task',
-                            testError
-                        );
-                    })
-                );
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error scheduling task',
+                        testError
+                    );
+                });
+            });
+        });
+
+        describe('createGraphFailSubscription', function() {
+            var taskHandlerStream;
+            var subscription;
+
+            before(function() {
+                taskHandlerStream = new Rx.Subject();
             });
 
-            it('should handle subscription callback errors', function(done) {
-                var testError = new Error('test schedule task error');
-                store.checkoutTaskForScheduler.resolves({ test: 'test' });
-                taskScheduler.scheduleTaskHandler.rejects(testError);
-                taskScheduler.handleStreamError.returns(Rx.Observable.empty());
+            beforeEach(function() {
+                this.sandbox.stub(taskScheduler, 'failGraph');
+                subscription = taskScheduler.createGraphFailSubscription(taskHandlerStream);
+            });
 
+            afterEach(function() {
+                subscription.dispose();
+            });
+
+            it('should not fail a graph on a handled task failure', function(done) {
+                var data = {
+                    graphId: 'testid',
+                    unhandledFailure: false
+                };
+                taskScheduler.failGraph.resolves(data);
+                taskHandlerStream.onNext(data);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.failGraph).to.not.have.been.called;
+                });
+            });
+
+            it('should fail a graph on an unhandled task failure', function(done) {
+                var data = {
+                    graphId: 'testid',
+                    unhandledFailure: true
+                };
+                taskScheduler.failGraph.resolves(data);
+                taskHandlerStream.onNext(data);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.failGraph).to.have.been.calledOnce;
+                    expect(taskScheduler.failGraph).to.have.been.calledWith(data);
+                    expect(taskScheduler.handleStreamSuccess).to.have.been.calledWith(
+                        'Graph failed due to unhandled task failure',
+                        data
+                    );
+                });
+            });
+
+            it('should handle errors related to failing a graph', function(done) {
+                var testError = new Error('test fail graph error');
+                taskScheduler.failGraph.rejects(testError);
+                taskHandlerStream.onNext({ unhandledFailure: true });
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error failing graph',
+                        testError
+                    );
+                });
+            });
+        });
+
+        describe('createUpdateTaskDependenciesSubscription', function() {
+            var taskHandlerStream;
+            var subscription;
+
+            before(function() {
+                taskHandlerStream = new Rx.Subject();
+            });
+
+            beforeEach(function() {
+                this.sandbox.stub(store, 'updateDependentTasks').resolves();
+                this.sandbox.stub(store, 'updateUnreachableTasks').resolves();
+                this.sandbox.stub(store, 'markTaskEvaluated');
+                this.sandbox.stub(taskScheduler.evaluateGraphStream, 'onNext');
+                subscription = taskScheduler
+                                    .createUpdateTaskDependenciesSubscription(taskHandlerStream);
+            });
+
+            afterEach(function() {
+                subscription.dispose();
+            });
+
+            it('should not take action unhandled task failures', function(done) {
+                taskHandlerStream.onNext({
+                    unhandledFailure: true
+                });
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.updateDependentTasks).to.not.have.been.called;
+                    expect(store.updateUnreachableTasks).to.not.have.been.called;
+                    expect(store.markTaskEvaluated).to.not.have.been.called;
+                    expect(taskScheduler.handleStreamSuccess).to.not.have.been.called;
+                    expect(taskScheduler.handleStreamError).to.not.have.been.called;
+                });
+            });
+
+            it('should mark tasks as evaluated after their dependent tasks have been updated',
+                    function(done) {
+                var data = {
+                    unhandledFailure: false
+                };
+                store.markTaskEvaluated.resolves(data);
+                taskHandlerStream.onNext(data);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.markTaskEvaluated).to.have.been.calledOnce;
+                    expect(store.markTaskEvaluated).to.have.been.calledWith(data);
+                });
+            });
+
+            it('should update dependent and unreachable tasks on handled task failures',
+                    function(done) {
+                var data = {
+                    unhandledFailure: false
+                };
+                store.markTaskEvaluated.resolves(data);
+                taskHandlerStream.onNext(data);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.evaluateGraphStream.onNext).to.have.been.calledOnce;
+                    expect(taskScheduler.evaluateGraphStream.onNext)
+                        .to.have.been.calledWith(data);
+                });
+            });
+
+            it('should handle errors related to updating task dependencies', function(done) {
+                var testError = new Error('test update dependencies error');
+                store.updateDependentTasks.rejects(testError);
+                taskHandlerStream.onNext({ unhandledFailure: false });
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error updating task dependencies',
+                        testError
+                    );
+                });
+            });
+
+            it('should handle errors related to marking a task as evaluated', function(done) {
+                var testError = new Error('test mark task evaluated error');
+                store.markTaskEvaluated.rejects(testError);
+                taskHandlerStream.onNext({ unhandledFailure: false });
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error updating task dependencies',
+                        testError
+                    );
+                });
+            });
+        });
+
+        describe('createStartTaskGraphSubscription', function() {
+            var startGraphStream;
+            var subscription;
+
+            before(function() {
+                startGraphStream = new Rx.Subject();
+            });
+
+            beforeEach(function() {
+                this.sandbox.stub(TaskGraph, 'create').resolves();
+                this.sandbox.stub(taskScheduler, 'persistInitialGraphAndTaskState').resolves();
+                this.sandbox.stub(taskScheduler.evaluateGraphStream, 'onNext');
+                subscription = taskScheduler.createStartTaskGraphSubscription(startGraphStream);
+            });
+
+            afterEach(function() {
+                subscription.dispose();
+            });
+
+            it('should create and persist a graph', function(done) {
+                var data = {};
+                TaskGraph.create.resolves(data);
+                taskScheduler.persistInitialGraphAndTaskState.resolves(data);
+                startGraphStream.onNext(data);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(TaskGraph.create).to.have.been.calledOnce;
+                    expect(TaskGraph.create).to.have.been.calledWith(data);
+                    expect(taskScheduler.persistInitialGraphAndTaskState).to.have.been.calledOnce;
+                    expect(taskScheduler.persistInitialGraphAndTaskState)
+                        .to.have.been.calledWith(data);
+                    expect(taskScheduler.evaluateGraphStream.onNext).to.have.been.calledOnce;
+                    expect(taskScheduler.evaluateGraphStream.onNext).to.have.been.calledWith(data);
+                });
+            });
+
+            it('should handle errors related to starting graphs', function(done) {
+                var testError = new Error('test start graph error');
+                TaskGraph.create.rejects(testError);
+                startGraphStream.onNext();
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error starting task graph',
+                        testError
+                    );
+                });
+            });
+        });
+
+        describe('createGraphDoneSubscription', function() {
+            var readyTaskStream;
+            var subscription;
+
+            before(function() {
+                readyTaskStream = new Rx.Subject();
+            });
+
+            beforeEach(function() {
+                this.sandbox.stub(store, 'checkGraphDone').resolves();
+                this.sandbox.stub(taskScheduler, 'publishGraphDone').resolves();
+                subscription = taskScheduler.createGraphDoneSubscription(readyTaskStream);
+            });
+
+            afterEach(function() {
+                subscription.dispose();
+            });
+
+            it('should filter if tasks is not empty', function(done) {
+                var data = {
+                    tasks: [{}, {}]
+                };
+                readyTaskStream.onNext(data);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.checkGraphDone).to.not.have.been.called;
+                    expect(taskScheduler.publishGraphDone).to.not.have.been.called;
+                    expect(taskScheduler.handleStreamSuccess).to.not.have.been.called;
+                });
+            });
+
+            it('should filter if the graph is not done', function(done) {
+                var data = {
+                    tasks: []
+                };
+                store.checkGraphDone.resolves({ done: false });
+                readyTaskStream.onNext(data);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.checkGraphDone).to.have.been.calledOnce;
+                    expect(taskScheduler.publishGraphDone).to.not.have.been.called;
+                    expect(taskScheduler.handleStreamSuccess).to.not.have.been.called;
+                });
+            });
+
+            it('should publish if a graph is done', function(done) {
+                var data1 = {};
+                var data2 = { done: true };
+                store.checkGraphDone.resolves(data2);
+                taskScheduler.publishGraphDone.resolves(data2);
+                readyTaskStream.onNext(data1);
+
+                setImmediateAssertWrapper(done, function() {
+                    expect(store.checkGraphDone).to.have.been.calledOnce;
+                    expect(store.checkGraphDone).to.have.been.calledWith(data1);
+                    expect(taskScheduler.publishGraphDone).to.have.been.calledOnce;
+                    expect(taskScheduler.publishGraphDone).to.have.been.calledWith(data2);
+                    expect(taskScheduler.handleStreamSuccess).to.have.been.calledOnce;
+                    expect(taskScheduler.handleStreamSuccess).to.have.been.calledWith(null, data2);
+                });
+            });
+
+            it('should handle stream errors', function(done) {
+                var testError = new Error('test check graph done error');
+                store.checkGraphDone.rejects(testError);
                 readyTaskStream.onNext();
 
-                process.nextTick(
-                    asyncAssertWrappper(done, function() {
-                        expect(taskScheduler.handleStreamError).to.have.been.calledWith(
-                            'Error scheduling task',
-                            testError
-                        );
-                    })
-                );
-            });
-        });
-    });
-
-    describe('Scheduling Pipeline', function() {
-        beforeEach('beforeEach Scheduling Pipeline', function() {
-            taskScheduler = TaskScheduler.create();
-            taskScheduler.evaluateGraphStateHandler = sinon.stub();
-            taskScheduler.evaluateExternalContextHandler = sinon.stub();
-            taskScheduler.scheduleTaskHandler = sinon.stub();
-            return taskScheduler.initializePipeline();
-        });
-
-        afterEach('afterEach Scheduling Pipeline', function() {
-            return taskScheduler.stop();
-        });
-
-        it('should respond to graph state change events', function() {
-            var graph = {};
-            taskScheduler.graphStateChangeStream.onNext(graph);
-
-            expect(taskScheduler.evaluateGraphStateHandler).to.have.been.calledOnce;
-            expect(taskScheduler.evaluateGraphStateHandler).to.have.been.calledWith(graph);
-        });
-
-        it('should respond to external context update events', function(done) {
-            var graph = {};
-            taskScheduler.evaluateExternalContextHandler.resolves([]);
-            taskScheduler.externalContextStream.onNext(graph);
-
-            setImmediate(function() {
-                try {
-                    expect(taskScheduler.evaluateExternalContextHandler).to.have.been.calledOnce;
-                    expect(taskScheduler.evaluateExternalContextHandler)
-                        .to.have.been.calledWith(graph);
-                    done();
-                } catch (e) {
-                    done(e);
-                }
-            });
-        });
-
-        it('should schedule a task on graph state change', function() {
-            var tasks = [
-                { instanceId: 'test-task-id' }
-            ];
-            taskScheduler.evaluateGraphStateHandler.returns(tasks);
-            taskScheduler.graphStateChangeStream.onNext();
-
-            expect(taskScheduler.scheduleTaskHandler).to.have.been.calledOnce;
-            expect(taskScheduler.scheduleTaskHandler).to.have.been.calledWith(tasks);
-        });
-
-        it('should schedule a task on external context update', function(done) {
-            var tasks = [
-                { instanceId: 'test-task-id' }
-            ];
-            taskScheduler.evaluateExternalContextHandler.resolves(tasks);
-            taskScheduler.externalContextStream.onNext({});
-
-            setImmediate(function() {
-                try {
-                    expect(taskScheduler.scheduleTaskHandler).to.have.been.calledOnce;
-                    expect(taskScheduler.scheduleTaskHandler).to.have.been.calledWith(tasks);
-                    done();
-                } catch (e) {
-                    done(e);
-                }
+                setImmediateAssertWrapper(done, function() {
+                    expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
+                    expect(taskScheduler.handleStreamError).to.have.been.calledWith(
+                        'Error checking graph done',
+                        testError
+                    );
+                });
             });
         });
     });
