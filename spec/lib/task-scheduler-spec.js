@@ -59,6 +59,30 @@ describe('Task Scheduler', function() {
             taskScheduler = TaskScheduler.create();
         });
 
+        describe('stream initialization and stopping', function() {
+            beforeEach(function() {
+                taskScheduler.pipelines = [];
+            });
+
+            it('should create disposable streams', function() {
+                taskScheduler.initializePipeline().forEach(function(stream) {
+                    expect(stream).to.have.property('dispose').that.is.a('function');
+                });
+            });
+
+            it('should dispose streams on stop', function() {
+                taskScheduler.pipelines = [
+                    { dispose: sinon.stub() },
+                    { dispose: sinon.stub() },
+                    { dispose: sinon.stub() }
+                ];
+                taskScheduler.stop();
+                taskScheduler.pipelines.forEach(function(mock) {
+                    expect(mock.dispose).to.have.been.calledOnce;
+                });
+            });
+        });
+
         it('stream success handler should return an observable', function() {
             taskScheduler.handleStreamSuccess.restore();
             expect(taskScheduler.handleStreamSuccess()).to.be.an.instanceof(Rx.Observable);
