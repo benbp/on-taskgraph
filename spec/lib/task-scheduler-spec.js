@@ -34,7 +34,9 @@ describe('Task Scheduler', function() {
             require('../../lib/task-scheduler'),
             require('../../lib/task-graph'),
             require('../../lib/store'),
-            require('../../lib/stores/mongo')
+            require('../../lib/stores/mongo'),
+            require('../../lib/messenger'),
+            require('../../lib/messengers/messenger-mongo')
         ]);
         Constants = helper.injector.get('Constants');
         TaskScheduler = helper.injector.get('TaskGraph.TaskScheduler');
