@@ -9,16 +9,8 @@ describe("Task-runner", function() {
     TaskRunner,
     taskMessenger = {},
     store = {},
-    taskAndGraphId,
-    stubbedTask = {run:function() {}},
-    Rx,
-    taskDef = {
-        friendlyName: 'testTask',
-        implementsTask: 'fakeBaseTask',
-        runJob: 'fakeJob',
-        options: {},
-        properties: {}
-    };
+    Promise,
+    Rx;
 
     var asyncAssertWrapper = function(done, cb) {
         return function(data) {
@@ -45,23 +37,11 @@ describe("Task-runner", function() {
                 helper.di.simpleWrapper(store, 'TaskGraph.Store')
         ]);
         Rx = helper.injector.get('Rx');
+        Promise = helper.injector.get('Promise');
         TaskRunner = helper.injector.get('TaskGraph.TaskRunner');
         this.sandbox = sinon.sandbox.create();
     });
 
-    beforeEach(function() {
-        runner = TaskRunner.create();
-        taskAndGraphId = {
-            taskId: 'someTaskId',
-            graphId: 'someGraphId'
-        };
-        stubbedTask.run = this.sandbox.stub();
-        Task.create = this.sandbox.stub().returns(stubbedTask);
-        store.checkoutTaskForRunner = this.sandbox.stub();
-        store.getTaskById = this.sandbox.stub();
-        store.heartbeatTasks = this.sandbox.stub();
-        store.setTaskState = this.sandbox.stub();
-    });
 
     afterEach(function() {
         this.sandbox.restore();
@@ -70,6 +50,11 @@ describe("Task-runner", function() {
     describe('stream setup/cleanup', function() {
 
         describe('start', function() {
+
+            beforeEach(function() {
+                this.sandbox.restore();
+                runner = TaskRunner.create();
+            });
 
             it('should mark itself running', function(done) {
                 runner.running = false;
@@ -90,6 +75,7 @@ describe("Task-runner", function() {
                 runner.running = false;
                 runner.subscribeRunTask = this.sandbox.stub();
                 runner.initializePipeline = this.sandbox.stub();
+                store.heartbeatTasks = this.sandbox.stub();
                 return runner.start()
                 .then(function() {
                     try {
@@ -119,6 +105,8 @@ describe("Task-runner", function() {
             describe('initializePipeline', function() {
 
                 it('should return disposable subscriptions', function() {
+                    store.checkoutTaskForRunner = this.sandbox.stub();
+                    store.getTaskById = this.sandbox.stub();
                     runner.initializePipeline().forEach(function(subscription) {
                         expect(subscription).to.have.property('dispose')
                         .that.is.a('function');
@@ -127,6 +115,18 @@ describe("Task-runner", function() {
 
 
                 describe('createRunTaskSubscription', function() {
+                    var taskAndGraphId;
+
+                    beforeEach(function() {
+                        this.sandbox.restore();
+                        runner = TaskRunner.create();
+                        store.checkoutTaskForRunner = this.sandbox.stub();
+                        store.getTaskById = this.sandbox.stub();
+                        taskAndGraphId = {
+                            taskId: 'someTaskId',
+                            graphId: 'someGraphId'
+                        };
+                    });
 
                     it('should not flow if task runner is not running', function(done) {
                         runner.running = false;
@@ -159,22 +159,21 @@ describe("Task-runner", function() {
                     it('should run a task', function(done) {
                         runner.running = true;
                         store.checkoutTaskForRunner.resolves(taskAndGraphId);
-                        store.getTaskById.resolves(taskDef);
+                        store.getTaskById.resolves();
                         runner.runTask = this.sandbox.stub().resolves();
                         runner.handleStreamSuccess = this.sandbox.stub();
-                        var subscription = runner.createRunTaskSubscription(runner.runTaskStream);
+                        runner.createRunTaskSubscription(runner.runTaskStream);
                         runner.runTaskStream.onNext(taskAndGraphId);
                         setImmediateAssertWrapper(done, function() {
                             expect(runner.runTask).to.have.been.calledOnce;
                             expect(runner.handleStreamSuccess).to.have.been.calledOnce;
-                            subscription.dispose();
                         });
                     });
 
                     it('should handle any errors in the stream', function(done) {
                         runner.running = true;
                         store.checkoutTaskForRunner.resolves(taskAndGraphId);
-                        store.getTaskById.resolves(taskDef);
+                        store.getTaskById.resolves();
                         runner.runTask = this.sandbox.stub().resolves();
 
                         var mapFuncs = [
@@ -197,27 +196,29 @@ describe("Task-runner", function() {
 
                 describe('createHeartbeatSubscription', function() {
 
+                    beforeEach(function() {
+                        this.sandbox.restore();
+                        runner = TaskRunner.create();
+                        store.heartbeatTasks = this.sandbox.stub().resolves();
+                        runner.handleStreamSuccess = this.sandbox.stub();
+                    });
+
                     it('should heartbeat Tasks on an interval', function(done) {
                         runner.running = true;
                         runner.heartbeatInterval = 20;
-                        store.heartbeatTasks = this.sandbox.stub().resolves();
-                        runner.handleStreamSuccess = this.sandbox.stub();
-                        var subscription = runner.createHeartbeatSubscription();
+                        runner.createHeartbeatSubscription();
                         setTimeout(asyncAssertWrapper(done, function() {
                             expect(store.heartbeatTasks.callCount).to.equal(2);
                             expect(runner.handleStreamSuccess.callCount).to.equal(2);
-                            subscription.dispose();
                         }), 59);
                     });
 
                     it('should not beat when the runner is not running', function(done) {
                         runner.running = false;
-                        var subscription = runner.createHeartbeatSubscription(1);
-                        store.heartbeatTasks = this.sandbox.stub().resolves();
-                        setImmediateAssertWrapper(done, function() {
+                        runner.createHeartbeatSubscription(1);
+                        setTimeout(asyncAssertWrapper(done, function() {
                             expect(store.heartbeatTasks).to.not.have.been.called;
-                            subscription.dispose();
-                        });
+                        }), 20);
                     });
 
                     it('should return a disposable subscription', function() {
@@ -230,22 +231,25 @@ describe("Task-runner", function() {
                         runner.running = true;
                         runner.heartbeatInterval = 1;
                         store.heartbeatTasks = this.sandbox.stub().throws(new Error('test error'));
-                        runner.stop = this.sandbox.stub().resolves();
-                        runner.handleStreamSuccess = this.sandbox.stub();
-                        var subscription = runner.createHeartbeatSubscription();
+                        runner.stop = this.sandbox.stub();
+                        runner.createHeartbeatSubscription();
                         setTimeout(asyncAssertWrapper(done, function() {
                             expect(store.heartbeatTasks).to.have.been.calledOnce;
                             expect(runner.handleStreamSuccess).to.have.been.calledOnce;
                             expect(runner.stop).to.have.been.calledOnce;
-                            subscription.dispose();
                         }), 20);
                     });
                 });
             });
-
         });
 
         describe('stop', function() {
+
+            beforeEach(function() {
+                this.sandbox.restore();
+                runner = TaskRunner.create();
+            });
+
             it('should mark itself not running', function() {
                 runner.running = true;
                 runner.stop();
@@ -269,6 +273,12 @@ describe("Task-runner", function() {
     });
 
     describe('subscribeRunTask', function() {
+
+        before(function() {
+            this.sandbox.restore();
+            runner = TaskRunner.create();
+        });
+
         it("should wrap the taskMessenger's subscribeRunTask method", function() {
             taskMessenger.subscribeRunTask = this.sandbox.stub();
             runner.subscribeRunTask();
@@ -277,6 +287,12 @@ describe("Task-runner", function() {
     });
 
     describe('publishTaskFinished', function() {
+
+        before(function() {
+            this.sandbox.restore();
+            runner = TaskRunner.create();
+        });
+
         it("should wrap the taskMessenger's publishTaskFinished", function() {
             taskMessenger.publishTaskFinished = this.sandbox.stub().resolves();
             var finishedTask = {
@@ -292,6 +308,12 @@ describe("Task-runner", function() {
     });
 
     describe('stream handlers', function() {
+
+        beforeEach(function() {
+            this.sandbox.restore();
+            runner = TaskRunner.create();
+        });
+
         it('stream success handler should return an observable', function() {
             expect(runner.handleStreamSuccess()).to.be.an.instanceof(Rx.Observable);
         });
@@ -302,25 +324,77 @@ describe("Task-runner", function() {
     });
 
     describe('runTask', function() {
+        var finishedTask, data, taskDef, stubbedTask;
+
+        before(function() {
+            taskDef = {
+                instanceId: 'anInstanceId',
+                friendlyName: 'testTask',
+                implementsTask: 'fakeBaseTask',
+                runJob: 'fakeJob',
+                options: {},
+                properties: {}
+            };
+            finishedTask = {
+                taskId: 'aTaskId',
+                instanceId: 'anInstanceId',
+                context: { graphId: 'aGraphId'},
+                state: 'finished'
+            };
+            data = {
+                task: taskDef,
+                context: {}
+            };
+        });
+
+        beforeEach(function() {
+            this.sandbox.restore();
+
+            stubbedTask = _.defaults({run: this.sandbox.stub()}, taskDef);
+            Task.create = this.sandbox.stub().returns(stubbedTask);
+            stubbedTask.definition = { injectableName: 'taskName'};
+            stubbedTask.run = this.sandbox.stub().resolves(finishedTask);
+            store.setTaskState = this.sandbox.stub().resolves();
+            runner.publishTaskFinished = this.sandbox.stub();
+        });
+
         it('should return an Observable', function() {
+            expect(runner.runTask(data)).to.be.an.instanceof(Rx.Observable);
         });
 
         it('should instantiate a task', function() {
+            runner.runTask(data).subscribe(function() {
+                expect(Task.create).to.have.been.calledOnce;
+            });
         });
 
         it('should run a task', function() {
+            runner.runTask(data).subscribe(function() {
+                expect(stubbedTask.run).to.have.been.calledOnce;
+            });
         });
 
-        it('should add and remove tasks from its activeTasks list', function() {
+        it('should add and remove tasks from its activeTasks list', function(done) {
+            stubbedTask.run = function() {
+                expect(runner.activeTasks[taskDef.instanceId]).to.equal(stubbedTask);
+                return Promise.resolve(finishedTask);
+            };
+            runner.runTask(data);
+            setImmediateAssertWrapper(done, function() {
+                expect(_.isEmpty(runner.activeTasks)).to.equal(true);
+            });
         });
 
         it('should publish a task finished event', function() {
+            runner.runTask(data).subscribe(function() {
+                expect(runner.publishTaskFinished).to.have.been.calledOnce;
+            });
         });
 
         it('should set the state of a task', function() {
-        });
-
-        it('should not crash the parent pipeline if a task fails', function(){
+            runner.runTask(data).subscribe(function() {
+                expect(store.setTaskState).to.have.been.calledOnce;
+            });
         });
     });
 });
