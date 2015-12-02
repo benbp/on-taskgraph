@@ -19,6 +19,7 @@ var di = require('di'),
             require('./lib/task-graph-subscriptions'),
             require('./lib/store'),
             require('./lib/task-scheduler'),
+            require('./lib/lease-expiration-poller'),
             require('./lib/loader'),
             require('./lib/service-graph'),
             require('./lib/stores/mongo')
