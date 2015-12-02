@@ -170,11 +170,13 @@ describe("Task-runner", function() {
                         });
                     });
 
-                    it('should handle any errors in the stream', function(done) {
+                    it('should handle any errors in the stream without crashing the stream', function(done) {
                         runner.running = true;
                         store.checkoutTaskForRunner.resolves(taskAndGraphId);
                         store.getTaskById.resolves();
                         runner.runTask = this.sandbox.stub().resolves();
+                        runner.handleStreamError = this.sandbox.stub();
+                        runner.handleStreamSuccess = this.sandbox.stub();
 
                         var mapFuncs = [
                             store.checkoutTaskForRunner,
@@ -182,14 +184,17 @@ describe("Task-runner", function() {
                             runner.runTask
                         ];
 
-                        var errSpy = sinon.spy(runner, 'handleStreamError');
+                        var subscription = runner.createRunTaskSubscription(runner.runTaskStream);
+
+
                         _.forEach(mapFuncs, function(func) {
-                            runner.createRunTaskSubscription(runner.runTaskStream);
                             func.throws(new Error());
                             runner.runTaskStream.onNext({});
                         });
+
                         setImmediateAssertWrapper(done, function() {
-                            expect(errSpy.callCount).to.equal(3);
+                            expect(runner.handleStreamError).to.not.be.called;
+                            expect(runner.handleStreamSuccess).to.be.calledThrice;
                         });
                     });
                 });
@@ -398,13 +403,21 @@ describe("Task-runner", function() {
         });
 
         it('should not crash the parent stream if a task fails', function(done) {
-            stubbedTask.run.onCall(1).throws(new Error);
+            runner.running = true;
+            stubbedTask.run.onCall(1).throws(new Error('test error'));
+            stubbedTask.run.resolves(finishedTask);
+            runner.handleStreamSuccess = this.sandbox.stub();
+            runner.handleStreamError = this.sandbox.stub();
+            store.checkoutTaskForRunner = this.sandbox.stub().resolves({ task: 'taskStuff'});
+            store.getTaskById = this.sandbox.stub().resolves(data);
+            var subscription = runner.createRunTaskSubscription(runner.runTaskStream);
 
             runner.runTaskStream.onNext();
             runner.runTaskStream.onNext();
             runner.runTaskStream.onNext();
 
             setImmediateAssertWrapper(done, function() {
+                expect(runner.handleStreamError).to.not.be.called;
                 expect(runner.handleStreamSuccess.callCount).to.equal(2);
             });
         });
