@@ -396,5 +396,17 @@ describe("Task-runner", function() {
                 expect(store.setTaskState).to.have.been.calledOnce;
             });
         });
+
+        it('should not crash the parent stream if a task fails', function(done) {
+            stubbedTask.run.onCall(1).throws(new Error);
+
+            runner.runTaskStream.onNext();
+            runner.runTaskStream.onNext();
+            runner.runTaskStream.onNext();
+
+            setImmediateAssertWrapper(done, function() {
+                expect(runner.handleStreamSuccess.callCount).to.equal(2);
+            });
+        });
     });
 });
