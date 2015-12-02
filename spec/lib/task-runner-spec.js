@@ -170,31 +170,25 @@ describe("Task-runner", function() {
                         });
                     });
 
-                    it('should handle any errors in the stream without crashing the stream', function(done) {
+                    it('should handle stream errors without crashing the parent stream', function(done) {
                         runner.running = true;
                         store.checkoutTaskForRunner.resolves(taskAndGraphId);
+                        store.checkoutTaskForRunner.onCall(1).throws(new Error('checkout error'));
                         store.getTaskById.resolves();
+                        store.getTaskById.onCall(0).throws(new Error('get task error'));
                         runner.runTask = this.sandbox.stub().resolves();
-                        runner.handleStreamError = this.sandbox.stub();
+                        var eSpy = sinon.spy(runner, 'handleStreamError');
                         runner.handleStreamSuccess = this.sandbox.stub();
-
-                        var mapFuncs = [
-                            store.checkoutTaskForRunner,
-                            store.getTaskById,
-                            runner.runTask
-                        ];
 
                         var subscription = runner.createRunTaskSubscription(runner.runTaskStream);
 
-
-                        _.forEach(mapFuncs, function(func) {
-                            func.throws(new Error());
-                            runner.runTaskStream.onNext({});
-                        });
+                        runner.runTaskStream.onNext();
+                        runner.runTaskStream.onNext();
+                        runner.runTaskStream.onNext();
 
                         setImmediateAssertWrapper(done, function() {
-                            expect(runner.handleStreamError).to.not.be.called;
-                            expect(runner.handleStreamSuccess).to.be.calledThrice;
+                            expect(eSpy.callCount).to.equal(2);
+                            expect(runner.handleStreamSuccess).to.be.calledOnce;
                         });
                     });
                 });
@@ -380,11 +374,9 @@ describe("Task-runner", function() {
         });
 
         it('should add and remove tasks from its activeTasks list', function(done) {
-            stubbedTask.run = function() {
+            runner.runTask(data).subscribe(function() {
                 expect(runner.activeTasks[taskDef.instanceId]).to.equal(stubbedTask);
-                return Promise.resolve(finishedTask);
-            };
-            runner.runTask(data);
+            });
             setImmediateAssertWrapper(done, function() {
                 expect(_.isEmpty(runner.activeTasks)).to.equal(true);
             });
@@ -406,8 +398,8 @@ describe("Task-runner", function() {
             runner.running = true;
             stubbedTask.run.onCall(1).throws(new Error('test error'));
             stubbedTask.run.resolves(finishedTask);
-            runner.handleStreamSuccess = this.sandbox.stub();
-            runner.handleStreamError = this.sandbox.stub();
+            runner.handleStreamSuccess = this.sandbox.stub().returns(Rx.Observable.empty());
+            runner.handleStreamError = this.sandbox.stub().returns(Rx.Observable.empty());
             store.checkoutTaskForRunner = this.sandbox.stub().resolves({ task: 'taskStuff'});
             store.getTaskById = this.sandbox.stub().resolves(data);
             var subscription = runner.createRunTaskSubscription(runner.runTaskStream);
@@ -417,7 +409,7 @@ describe("Task-runner", function() {
             runner.runTaskStream.onNext();
 
             setImmediateAssertWrapper(done, function() {
-                expect(runner.handleStreamError).to.not.be.called;
+                expect(runner.handleStreamError).to.be.called.once;
                 expect(runner.handleStreamSuccess.callCount).to.equal(2);
             });
         });
