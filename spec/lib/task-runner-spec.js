@@ -398,8 +398,8 @@ describe("Task-runner", function() {
             runner.running = true;
             stubbedTask.run.onCall(1).throws(new Error('test error'));
             stubbedTask.run.resolves(finishedTask);
-            runner.handleStreamSuccess = this.sandbox.stub().returns(Rx.Observable.empty());
-            runner.handleStreamError = this.sandbox.stub().returns(Rx.Observable.empty());
+            var successSpy = sinon.spy(runner, 'handleStreamSuccess');// = this.sandbox.stub().returns(Rx.Observable.empty());
+            var errorSpy = sinon.spy(runner, 'handleStreamError');// = this.sandbox.stub().returns(Rx.Observable.empty());
             store.checkoutTaskForRunner = this.sandbox.stub().resolves({ task: 'taskStuff'});
             store.getTaskById = this.sandbox.stub().resolves(data);
             var subscription = runner.createRunTaskSubscription(runner.runTaskStream);
@@ -409,8 +409,8 @@ describe("Task-runner", function() {
             runner.runTaskStream.onNext();
 
             setImmediateAssertWrapper(done, function() {
-                expect(runner.handleStreamError).to.be.called.once;
-                expect(runner.handleStreamSuccess.callCount).to.equal(2);
+                expect(errorSpy).to.be.called.once;
+                expect(successSpy).to.be.calledTwice;
             });
         });
     });
