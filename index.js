@@ -22,6 +22,7 @@ var di = require('di'),
             require('./lib/lease-expiration-poller'),
             require('./lib/loader'),
             require('./lib/service-graph'),
+            require('./lib/rx-mixins'),
             require('./lib/stores/mongo')
         ])
     ),
