@@ -17,6 +17,7 @@ var di = require('di'),
             require('./lib/task-scheduler.js'),
             require('./lib/lease-expiration-poller.js'),
             require('./lib/service-graph.js'),
+            require('./lib/completed-task-poller.js'),
             require('./lib/rx-mixins.js')
         ])
     ),
