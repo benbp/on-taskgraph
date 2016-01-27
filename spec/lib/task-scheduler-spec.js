@@ -66,8 +66,8 @@ describe('Task Scheduler', function() {
     });
 
     beforeEach(function() {
-        this.sandbox.stub(TaskScheduler.prototype, 'handleStreamError');
-        this.sandbox.stub(TaskScheduler.prototype, 'handleStreamSuccess');
+        this.sandbox.spy(TaskScheduler.prototype, 'handleStreamError');
+        this.sandbox.spy(TaskScheduler.prototype, 'handleStreamSuccess');
         this.sandbox.stub(taskMessenger, 'subscribeRunTaskGraph').resolves({});
         this.sandbox.stub(taskMessenger, 'subscribeTaskFinished').resolves({});
         this.sandbox.stub(LeaseExpirationPoller, 'create').returns({
@@ -257,20 +257,17 @@ describe('Task Scheduler', function() {
         var checkGraphFinishedStream;
         var evaluateGraphStream;
 
-        before(function() {
-            taskHandlerStream = new Rx.Subject();
-        });
-
         beforeEach(function() {
             this.sandbox.stub(store, 'setTaskStateInGraph').resolves();
             this.sandbox.stub(store, 'updateDependentTasks').resolves();
             this.sandbox.stub(store, 'updateUnreachableTasks').resolves();
             this.sandbox.stub(store, 'markTaskEvaluated');
 
+            taskHandlerStream = new Rx.Subject();
             evaluateGraphStream = new Rx.Subject();
             checkGraphFinishedStream = new Rx.Subject();
-            this.sandbox.stub(evaluateGraphStream, 'onNext');
-            this.sandbox.stub(checkGraphFinishedStream, 'onNext');
+            this.sandbox.spy(evaluateGraphStream, 'onNext');
+            this.sandbox.spy(checkGraphFinishedStream, 'onNext');
 
             taskScheduler = TaskScheduler.create();
             taskScheduler.running = true;
@@ -283,8 +280,9 @@ describe('Task Scheduler', function() {
         });
 
         afterEach(function() {
-            checkGraphFinishedStream.dispose();
+            taskHandlerStream.dispose();
             evaluateGraphStream.dispose();
+            checkGraphFinishedStream.dispose();
         });
 
         it('should not flow if scheduler is not running', function(done) {
@@ -333,46 +331,24 @@ describe('Task Scheduler', function() {
             taskHandlerStream.onNext({});
         });
 
-        it('should update dependent and unreachable tasks on handled task failures',
-                function(done) {
-            var data = {
-                unhandledFailure: false
-            };
-            store.markTaskEvaluated.resolves(data);
-            taskHandlerStream.onNext(data);
-
-            setImmediateAssertWrapper(done, function() {
-                expect(taskScheduler.evaluateGraphStream.onNext).to.have.been.calledOnce;
-                expect(taskScheduler.evaluateGraphStream.onNext)
-                    .to.have.been.calledWith(data);
-            });
-        });
-
         it('should handle errors related to updating task dependencies', function(done) {
             var testError = new Error('test update dependencies error');
-            store.updateDependentTasks.rejects(testError);
-            taskHandlerStream.onNext({ unhandledFailure: false });
+            store.setTaskStateInGraph.rejects(testError);
 
-            setImmediateAssertWrapper(done, function() {
+            subscription = taskScheduler.createUpdateTaskDependenciesSubscription(
+                // Normally this would be an onNext call to taskHandlerStream, but
+                // use a finite observable sequence here to force the stream to
+                // end so we can trigger the test assertions at the right time.
+                Rx.Observable.just({}),
+                evaluateGraphStream,
+                checkGraphFinishedStream
+            );
+
+            streamCompletedWrapper(subscription, done, function() {
                 expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
                 expect(taskScheduler.handleStreamError).to.have.been.calledWith(
                     'Error updating task dependencies',
-                    testError
-                );
-            });
-        });
-
-        it('should handle errors related to marking a task as evaluated', function(done) {
-            var testError = new Error('test mark task evaluated error');
-            store.markTaskEvaluated.rejects(testError);
-            taskHandlerStream.onNext({ unhandledFailure: false });
-
-            setImmediateAssertWrapper(done, function() {
-                expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
-                expect(taskScheduler.handleStreamError).to.have.been.calledWith(
-                    'Error updating task dependencies',
-                    testError
-                );
+                    testError);
             });
         });
     });
