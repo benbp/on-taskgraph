@@ -116,7 +116,8 @@ describe('Task Scheduler', function() {
             return taskScheduler.start()
             .then(function() {
                 expect(taskScheduler.running).to.equal(true);
-                expect(taskScheduler.leasePoller.running).to.equal(true);
+                expect(LeaseExpirationPoller.create).to.have.been.calledOnce;
+                expect(taskScheduler.leasePoller.start).to.have.been.calledOnce;
                 expect(taskScheduler.subscriptions).to.deep.equal([stub, stub]);
             });
         });
@@ -137,7 +138,7 @@ describe('Task Scheduler', function() {
             })
             .then(function() {
                 expect(taskScheduler.running).to.equal(false);
-                expect(taskScheduler.leasePoller.running).to.equal(false);
+                expect(taskScheduler.leasePoller.stop).to.have.been.calledOnce;
                 expect(runTaskGraphDisposeStub).to.have.been.calledOnce;
                 expect(taskFinishedDisposeStub).to.have.been.calledOnce;
             });
@@ -154,7 +155,7 @@ describe('Task Scheduler', function() {
         });
 
         describe('createTasksToScheduleSubscription', function() {
-            var subscription;
+            var observable;
 
             beforeEach(function() {
                 this.sandbox.stub(store, 'findReadyTasks');
@@ -171,11 +172,11 @@ describe('Task Scheduler', function() {
                 store.findReadyTasks.resolves({});
                 taskScheduler.subscriptions = [];
                 var evaluateGraphStream = new Rx.Subject();
-                subscription = taskScheduler.createTasksToScheduleSubscription(evaluateGraphStream);
+                observable = taskScheduler.createTasksToScheduleSubscription(evaluateGraphStream);
 
                 return taskScheduler.stop()
                 .then(function() {
-                    streamCompletedWrapper(subscription, done, function() {
+                    streamCompletedWrapper(observable, done, function() {
                         expect(store.findReadyTasks).to.not.have.been.called;
                     });
                     evaluateGraphStream.onNext();
@@ -185,10 +186,10 @@ describe('Task Scheduler', function() {
             it('should filter if no tasks are found', function(done) {
                 taskScheduler.findReadyTasks.resolves([]);
                 taskScheduler.handleScheduleTaskEvent.resolves({});
-                subscription = taskScheduler.createTasksToScheduleSubscription(
+                observable = taskScheduler.createTasksToScheduleSubscription(
                     Rx.Observable.just());
 
-                streamCompletedWrapper(subscription, done, function() {
+                streamCompletedWrapper(observable, done, function() {
                     expect(taskScheduler.handleScheduleTaskEvent).to.not.have.been.called;
                 });
             });
@@ -205,10 +206,10 @@ describe('Task Scheduler', function() {
                 taskScheduler.findReadyTasks.restore();
                 store.findReadyTasks.resolves(result);
                 taskScheduler.handleScheduleTaskEvent.resolves({});
-                subscription = taskScheduler.createTasksToScheduleSubscription(
+                observable = taskScheduler.createTasksToScheduleSubscription(
                     Rx.Observable.just({ graphId: 'testgraphid' }));
 
-                streamCompletedWrapper(subscription, done, function() {
+                streamCompletedWrapper(observable, done, function() {
                     expect(store.findReadyTasks).to.have.been.calledOnce;
                     expect(store.findReadyTasks).to.have.been.calledWith(
                         taskScheduler.domain, 'testgraphid');
@@ -222,10 +223,10 @@ describe('Task Scheduler', function() {
                 taskScheduler.findReadyTasks.resolves({ tasks: [{}] });
                 taskScheduler.handleScheduleTaskEvent.restore();
                 taskScheduler.publishScheduleTaskEvent.rejects(testError);
-                subscription = taskScheduler.createTasksToScheduleSubscription(
+                observable = taskScheduler.createTasksToScheduleSubscription(
                     Rx.Observable.just());
 
-                streamCompletedWrapper(subscription, done, function() {
+                streamCompletedWrapper(observable, done, function() {
                     expect(taskScheduler.handleStreamError).to.have.been.calledWith(
                         'Error scheduling task',
                         testError
@@ -237,10 +238,10 @@ describe('Task Scheduler', function() {
                 var testError = new Error('test findReadyTasks error');
                 taskScheduler.findReadyTasks.restore();
                 store.findReadyTasks.rejects(testError);
-                subscription = taskScheduler.createTasksToScheduleSubscription(
+                observable = taskScheduler.createTasksToScheduleSubscription(
                     Rx.Observable.just({ graphId: 'testgraphid' }));
 
-                streamCompletedWrapper(subscription, done, function() {
+                streamCompletedWrapper(observable, done, function() {
                     expect(taskScheduler.handleStreamError).to.have.been.calledWith(
                         'Error finding ready tasks',
                         testError
@@ -253,7 +254,7 @@ describe('Task Scheduler', function() {
     describe('createUpdateTaskDependenciesSubscription', function() {
         var taskScheduler;
         var taskHandlerStream;
-        var subscription;
+        var observable;
         var checkGraphFinishedStream;
         var evaluateGraphStream;
 
@@ -272,7 +273,7 @@ describe('Task Scheduler', function() {
             taskScheduler = TaskScheduler.create();
             taskScheduler.running = true;
 
-            subscription = taskScheduler.createUpdateTaskDependenciesSubscription(
+            observable = taskScheduler.createUpdateTaskDependenciesSubscription(
                 taskHandlerStream,
                 evaluateGraphStream,
                 checkGraphFinishedStream
@@ -291,7 +292,7 @@ describe('Task Scheduler', function() {
 
             return taskScheduler.stop()
             .then(function() {
-                streamCompletedWrapper(subscription, done, function() {
+                streamCompletedWrapper(observable, done, function() {
                     expect(taskScheduler.updateTaskDependencies).to.not.have.been.called;
                 });
                 taskHandlerStream.onNext({});
@@ -305,7 +306,7 @@ describe('Task Scheduler', function() {
             };
             store.markTaskEvaluated.resolves(data);
 
-            streamSuccessWrapper(subscription, done, function() {
+            streamSuccessWrapper(observable, done, function() {
                 expect(checkGraphFinishedStream.onNext).to.have.been.calledOnce;
                 expect(checkGraphFinishedStream.onNext).to.have.been.calledWith(data);
             });
@@ -321,7 +322,7 @@ describe('Task Scheduler', function() {
             };
             store.markTaskEvaluated.resolves(data);
 
-            streamSuccessWrapper(subscription, done, function() {
+            streamSuccessWrapper(observable, done, function() {
                 expect(evaluateGraphStream.onNext).to.have.been.calledOnce;
                 expect(evaluateGraphStream.onNext).to.have.been.calledWith({
                     graphId: 'testgraphid'
@@ -335,13 +336,13 @@ describe('Task Scheduler', function() {
             var testError = new Error('test update dependencies error');
             store.setTaskStateInGraph.rejects(testError);
 
-            subscription = taskScheduler.createUpdateTaskDependenciesSubscription(
+            observable = taskScheduler.createUpdateTaskDependenciesSubscription(
                 Rx.Observable.just({}),
                 evaluateGraphStream,
                 checkGraphFinishedStream
             );
 
-            streamCompletedWrapper(subscription, done, function() {
+            streamCompletedWrapper(observable, done, function() {
                 expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
                 expect(taskScheduler.handleStreamError).to.have.been.calledWith(
                     'Error updating task dependencies',
@@ -353,10 +354,11 @@ describe('Task Scheduler', function() {
     describe('createCheckGraphFinishedSubscription', function() {
         var taskScheduler;
         var checkGraphFinishedStream;
-        var subscription;
+        var observable;
 
         beforeEach(function() {
             this.sandbox.stub(store, 'setGraphDone');
+            this.sandbox.stub(store, 'checkGraphFinished');
             checkGraphFinishedStream = new Rx.Subject();
             taskScheduler = TaskScheduler.create();
             taskScheduler.running = true;
@@ -366,12 +368,12 @@ describe('Task Scheduler', function() {
 
         it('should not flow if scheduler is not running', function(done) {
             taskScheduler.subscriptions = [];
-            subscription = taskScheduler.createCheckGraphFinishedSubscription(
+            observable = taskScheduler.createCheckGraphFinishedSubscription(
                 checkGraphFinishedStream);
 
             return taskScheduler.stop()
             .then(function() {
-                streamCompletedWrapper(subscription, done, function() {
+                streamCompletedWrapper(observable, done, function() {
                     expect(taskScheduler.checkGraphSucceeded).to.not.have.been.called;
                     expect(taskScheduler.failGraph).to.not.have.been.called;
                 });
@@ -389,10 +391,10 @@ describe('Task Scheduler', function() {
                 state: Constants.TaskStates.Failed
             };
             taskScheduler.failGraph.resolves();
-            subscription = taskScheduler.createCheckGraphFinishedSubscription(
+            observable = taskScheduler.createCheckGraphFinishedSubscription(
                 checkGraphFinishedStream);
 
-            streamSuccessWrapper(subscription, done, function() {
+            streamSuccessWrapper(observable, done, function() {
                 expect(taskScheduler.failGraph).to.have.been.calledOnce;
                 expect(taskScheduler.failGraph).to.have.been.calledWith(data);
             });
@@ -406,10 +408,10 @@ describe('Task Scheduler', function() {
                 state: Constants.TaskStates.Succeeded
             };
             taskScheduler.checkGraphSucceeded.resolves();
-            subscription = taskScheduler.createCheckGraphFinishedSubscription(
+            observable = taskScheduler.createCheckGraphFinishedSubscription(
                 checkGraphFinishedStream);
 
-            streamSuccessWrapper(subscription, done, function() {
+            streamSuccessWrapper(observable, done, function() {
                 expect(taskScheduler.checkGraphSucceeded).to.have.been.calledOnce;
                 expect(taskScheduler.checkGraphSucceeded).to.have.been.calledWith(data);
             });
@@ -425,15 +427,66 @@ describe('Task Scheduler', function() {
             var testError = new Error('test fail graph error');
             store.setGraphDone.rejects(testError);
             taskScheduler.failGraph.restore();
-            subscription = taskScheduler.createCheckGraphFinishedSubscription(
+            observable = taskScheduler.createCheckGraphFinishedSubscription(
                 Rx.Observable.just(data));
 
-            streamCompletedWrapper(subscription, done, function() {
+            streamCompletedWrapper(observable, done, function() {
                 expect(taskScheduler.handleStreamError).to.have.been.calledOnce;
                 expect(taskScheduler.handleStreamError).to.have.been.calledWith(
                     'Error failing graph',
                     testError
                 );
+            });
+        });
+
+        it('checkGraphSucceeded should persist and publish on finish', function(done) {
+            this.sandbox.stub(taskScheduler, 'publishGraphFinished');
+            taskScheduler.checkGraphSucceeded.restore();
+            var data = { graphId: 'testgraphid' };
+            var graphData = {
+                instanceId: 'testid',
+                _status: Constants.TaskStates.Succeeded,
+                ignoreThisField: 'please'
+            };
+            var dataDone = { graphId: 'testgraphid', done: true };
+            store.checkGraphFinished.resolves(dataDone);
+            store.setGraphDone.resolves(graphData);
+
+            var observable = taskScheduler.checkGraphSucceeded(data);
+            streamSuccessWrapper(observable, done, function() {
+                expect(store.checkGraphFinished).to.have.been.calledOnce;
+                expect(store.checkGraphFinished).to.have.been.calledWith(data);
+                expect(store.setGraphDone).to.have.been.calledOnce;
+                expect(store.setGraphDone).to.have.been.calledWith(
+                    Constants.TaskStates.Succeeded,
+                    dataDone
+                );
+                expect(taskScheduler.publishGraphFinished).to.have.been.calledOnce;
+                expect(taskScheduler.publishGraphFinished).to.have.been.calledWith({
+                    instanceId: 'testid',
+                    _status: Constants.TaskStates.Succeeded
+                });
+            });
+        });
+
+        it('checkGraphSucceeded should not set a graph as done if it is not', function(done) {
+            this.sandbox.stub(taskScheduler, 'publishGraphFinished');
+            taskScheduler.checkGraphSucceeded.restore();
+            var data = { graphId: 'testgraphid' };
+            var graphData = {
+                instanceId: 'testid',
+                _status: Constants.TaskStates.Succeeded,
+                ignoreThisField: 'please'
+            };
+            var dataDone = { graphId: 'testgraphid', done: false };
+            store.checkGraphFinished.resolves(dataDone);
+            store.setGraphDone.resolves(graphData);
+
+            var observable = taskScheduler.checkGraphSucceeded(data);
+            streamCompletedWrapper(observable, done, function() {
+                expect(store.checkGraphFinished).to.have.been.calledOnce;
+                expect(store.setGraphDone).to.not.have.been.called;
+                expect(taskScheduler.publishGraphFinished).to.not.have.been.called;
             });
         });
     });
