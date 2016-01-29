@@ -1,9 +1,8 @@
 // Copyright 2016, EMC, Inc.
-/* jshint node:true */
 
 'use strict';
 
-describe("Task-runner", function() {
+describe("Completed Task Poller", function() {
     var di = require('di');
     var core = require('on-core')(di, __dirname);
 
@@ -54,16 +53,17 @@ describe("Task-runner", function() {
     });
 
     it('start', function() {
-        this.sandbox.stub(poller, 'pollTaskRunnerLeases');
+        this.sandbox.stub(poller, 'pollTasks');
         expect(poller.running).to.equal(false);
         poller.start();
         expect(poller.running).to.equal(true);
-        expect(poller.pollTaskRunnerLeases).to.have.been.calledOnce;
+        expect(poller.pollTasks).to.have.been.calledOnce;
     });
 
 
     it('stop', function() {
-        this.sandbox.stub(poller, 'pollTaskRunnerLeases');
+        this.sandbox.stub(poller, 'pollTasks');
+        expect(poller.running).to.equal(false);
         poller.start();
         poller.stop();
         expect(poller.running).to.equal(false);
