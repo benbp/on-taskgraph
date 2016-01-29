@@ -144,6 +144,13 @@ describe('Task Scheduler', function() {
             });
         });
 
+        it('isRunning', function() {
+            taskScheduler.running = false;
+            expect(taskScheduler.isRunning()).to.equal(false);
+            taskScheduler.running = true;
+            expect(taskScheduler.isRunning()).to.equal(true);
+        });
+
         it('stream success handler should return an observable', function() {
             taskScheduler.handleStreamSuccess.restore();
             expect(taskScheduler.handleStreamSuccess()).to.be.an.instanceof(Rx.Observable);
