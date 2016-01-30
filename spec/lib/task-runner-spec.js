@@ -1,9 +1,11 @@
-// Copyright 2015, EMC, Inc.
-/* jshint node:true */
+// Copyright 2016, EMC, Inc.
 
 'use strict';
 
-describe("Task-runner", function() {
+describe("Task Runner", function() {
+    var di = require('di');
+    var core = require('on-core')(di, __dirname);
+
     var runner,
     Task = {},
     TaskRunner,
@@ -14,6 +16,8 @@ describe("Task-runner", function() {
         heartbeatTasksForRunner: function(){}
     },
     Promise,
+    Constants,
+    assert,
     Rx;
 
     var asyncAssertWrapper = function(done, cb) {
@@ -35,28 +39,29 @@ describe("Task-runner", function() {
             );
     };
 
-    var setImmediateAssertWrapper = function(done, cb) {
-        setImmediate(asyncAssertWrapper(done, cb));
-    };
-
     before(function() {
         helper.setupInjector([
-                require('../../lib/task-runner.js'),
-                helper.di.simpleWrapper(taskMessenger, 'Task.Messenger'),
-                helper.di.simpleWrapper(Task, 'Task.Task'),
-                helper.di.simpleWrapper(store, 'TaskGraph.Store')
+            core.workflowInjectables,
+            require('../../lib/task-runner.js'),
+            helper.di.simpleWrapper(taskMessenger, 'Task.Messengers.AMQP'),
+            helper.di.simpleWrapper(Task, 'Task.Task'),
+            helper.di.simpleWrapper(store, 'TaskGraph.Store')
         ]);
         Rx = helper.injector.get('Rx');
         Promise = helper.injector.get('Promise');
+        Constants = helper.injector.get('Constants');
+        assert = helper.injector.get('Assert');
         TaskRunner = helper.injector.get('TaskGraph.TaskRunner');
         this.sandbox = sinon.sandbox.create();
     });
 
+    beforeEach(function() {
+        runner = TaskRunner.create();
+    });
 
     afterEach(function() {
         this.sandbox.restore();
     });
-
 
     describe('start', function() {
 
@@ -315,14 +320,6 @@ describe("Task-runner", function() {
         beforeEach(function() {
             this.sandbox.restore();
             runner = TaskRunner.create();
-        });
-
-        it('stream success handler should return an observable', function() {
-            expect(runner.handleStreamSuccess()).to.be.an.instanceof(Rx.Observable);
-        });
-
-        it('stream error handler should return an empty observable', function() {
-            expect(runner.handleStreamError('test', {})).to.be.an.instanceof(Rx.Observable);
         });
     });
 
