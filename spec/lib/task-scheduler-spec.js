@@ -139,6 +139,7 @@ describe('Task Scheduler', function() {
             .then(function() {
                 expect(taskScheduler.running).to.equal(false);
                 expect(taskScheduler.leasePoller.stop).to.have.been.calledOnce;
+                expect(taskScheduler.subscriptions.length).to.equal(0);
                 expect(runTaskGraphDisposeStub).to.have.been.calledOnce;
                 expect(taskFinishedDisposeStub).to.have.been.calledOnce;
             });
