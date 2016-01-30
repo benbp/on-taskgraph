@@ -100,19 +100,6 @@ describe("Task Runner", function() {
         });
     });
 
-    describe('initializePipeline', function() {
-
-        it('should return disposable subscriptions', function() {
-            this.sandbox.stub(store, 'checkoutTask');
-            this.sandbox.stub(store, 'getTaskById');
-            runner.initializePipeline().forEach(function(subscription) {
-                expect(subscription).to.have.property('dispose')
-                .that.is.a('function');
-            });
-        });
-    });
-
-
     describe('createRunTaskSubscription', function() {
         var taskAndGraphId,
             taskData,
@@ -243,7 +230,7 @@ describe("Task Runner", function() {
             runner.running = true;
             runner.heartbeatInterval = 1;
             store.heartbeatTasksForRunner = this.sandbox.stub().throws(new Error('test error'));
-            runner.stop = this.sandbox.stub();
+            runner.stop = this.sandbox.stub().resolves();
             var heartStream = runner.createHeartbeatSubscription(Rx.Observable.interval(1));
             streamOnCompletedWrapper(heartStream, done, function() {
                 expect(store.heartbeatTasksForRunner).to.have.been.calledOnce;
@@ -261,21 +248,23 @@ describe("Task Runner", function() {
 
         it('should mark itself not running', function() {
             runner.running = true;
-            runner.stop();
-            expect(runner.isRunning()).to.equal(false);
+            return runner.stop()
+            .then(function() {
+                expect(runner.isRunning()).to.equal(false);
+            });
         });
 
         it('should dispose all pipelines', function() {
-            var mockOne = { dispose: sinon.stub() },
-            mockTwo = { dispose: sinon.stub() };
-            runner.pipelines = [
-                mockOne,
-                mockTwo
-            ];
-            runner.stop();
-            expect(runner.pipelines.length).to.equal(0);
-            expect(mockOne.dispose).to.have.been.calledOnce;
-            expect(mockTwo.dispose).to.have.been.calledOnce;
+            var sub1 = { dispose: sinon.stub() };
+            var sub2 = { dispose: sinon.stub() };
+            runner.subscriptions = [sub1, sub2];
+
+            return runner.stop()
+            .then(function() {
+                expect(runner.subscriptions.length).to.equal(0);
+                expect(sub1.dispose).to.have.been.calledOnce;
+                expect(sub2.dispose).to.have.been.calledOnce;
+            });
         });
     });
 
@@ -306,20 +295,14 @@ describe("Task Runner", function() {
             var finishedTask = {
                 taskId: 'aTaskId',
                 context: { graphId: 'aGraphId'},
-                state: 'finished'
+                state: 'finished',
+                definition: { terminalOnStates: ['succeeded'] }
             };
+
             runner.publishTaskFinished(finishedTask)
             .then(function() {
                 expect(taskMessenger.publishTaskFinished).to.have.been.calledOnce;
             });
-        });
-    });
-
-    describe('stream handlers', function() {
-
-        beforeEach(function() {
-            this.sandbox.restore();
-            runner = TaskRunner.create();
         });
     });
 
@@ -339,7 +322,8 @@ describe("Task Runner", function() {
                 taskId: 'aTaskId',
                 instanceId: 'anInstanceId',
                 context: { graphId: 'aGraphId'},
-                state: 'finished'
+                state: 'finished',
+                definition: { terminalOnStates: ['succeeded'] }
             };
             data = {
                 task: taskDef,
