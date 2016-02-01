@@ -216,9 +216,10 @@ describe('Task Scheduler', function() {
         });
 
         it('subscribeRunTaskGraph should emit to evaluateGraphStream', function() {
-            var data = { name: 'test' };
+            var uuid = helper.injector.get('uuid');
+            var data = { graphId: uuid.v4() };
             this.sandbox.spy(taskScheduler.evaluateGraphStream, 'onNext');
-            return taskScheduler.subscribeRunTaskGraph(data)
+            return taskScheduler.subscribeRunTaskGraph()
             .then(function() {
                 expect(taskMessenger.subscribeRunTaskGraph).to.have.been.calledOnce;
                 expect(taskMessenger.subscribeRunTaskGraph)
@@ -226,10 +227,7 @@ describe('Task Scheduler', function() {
                 var cb = taskMessenger.subscribeRunTaskGraph.firstCall.args[1];
                 cb(data);
                 expect(taskScheduler.evaluateGraphStream.onNext).to.have.been.calledOnce;
-                expect(taskScheduler.evaluateGraphStream.onNext).to.have.been.calledWith({
-                    injectableName: 'test',
-                    name: 'test'
-                });
+                expect(taskScheduler.evaluateGraphStream.onNext).to.have.been.calledWith(data);
             });
         });
 
